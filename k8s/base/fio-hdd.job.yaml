@@ -1,0 +1,46 @@
+# see: https://github.com/longhorn/dbench
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: fio-hdd
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 600
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: dbench
+        image: fbuchmeier/dbench:latest
+        imagePullPolicy: Always
+        # privilege needed to invalid the fs cache
+        securityContext:
+          privileged: true
+        env:
+          - name: FIO_SIZE
+            value: 4G
+          - name: DBENCH_MOUNTPOINT
+            value: /data
+          - name: FIO_DIRECT
+            value: "1"
+          # - name: DBENCH_QUICK
+          #   value: "yes"
+          # - name: FIO_OFFSET_INCREMENT
+          #   value: 256M
+        volumeMounts:
+          - name: disk
+            mountPath: /data
+
+      volumes:
+        - name: fio-hdd
+          persistentVolumeClaim:
+            claimName: rook-block-hdd
+
+        # - name: fio-ssd
+        #   persistentVolumeClaim:
+        #     claimName: rook-block-ssd
+
+        # - name: fio-nvme
+        #   persistentVolumeClaim:
+        #     claimName: rook-block-nvme

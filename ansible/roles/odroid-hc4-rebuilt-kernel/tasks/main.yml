@@ -1,0 +1,70 @@
+#
+# Since the ODROID HC4 out of the box doesn't support Kubernetes properly
+# (CNI drivers won't work, missing CGroup kernel features)
+# We must build and install a custom kernel
+#
+# This takes a long time (when run on the HC4, at least):
+# real    89m7.207s
+# user    297m0.320s
+# sys     21m4.400s
+#
+#
+
+- name: install deps
+  ansible.builtin.apt:
+    update: yes
+    pkg:
+      - git
+      - build-essential
+      - bc
+
+# After this build, uname should state
+# "Linux worker1 4.9.312+ #2 SMP PREEMPT ..."
+- name: clone the linux source code
+  ansible.builtin.shell:
+    chdir: "/home/{{ ansible_user }}"
+    cmd: |
+      git clone --depth 1 https://github.com/hardkernel/linux.git -b odroidg12-4.9.y
+
+- name: make config for odroid
+  ansible.builtin.shell:
+    chdir: "/home/{{ ansible_user }}"
+    cmd: |
+      make odroidg12_defconfig
+
+- name: copy in kernel config
+  ansible.builtin.copy:
+    src: odroid-hc4.kernel.config
+    dest: "/home/{{ ansible_user }}/linux/.config"
+
+- name: make -j4
+  ansible.builtin.shell:
+    chdir: "/home/{{ ansible_user }}"
+    cmd: |
+      make -j4
+
+- name: install modules
+  ansible.builtin.shell:
+    chdir: "/home/{{ ansible_user }}"
+    cmd: |
+      sudo make modules_install
+
+- name: copy compressed boot Image to /media/boot
+  ansible.builtin.shell:
+    chdir: "/home/{{ ansible_user }}"
+    cmd: |
+      sudo cp -f arch/arm64/boot/Image.gz arch/arm64/boot/dts/amlogic/meson64_odroidhc4.dtb /media/boot/
+
+- name: sync
+  ansible.builtin.shell:
+    chdir: "/home/{{ ansible_user }}"
+    cmd: |
+      sudo sync
+
+##########
+# Reboot #
+##########
+
+- name: reboot the machine
+  become: yes
+  ansible.builtin.reboot:

@@ -1,0 +1,35 @@
+all:
+  vars:
+    # ansible_connection: ssh
+    ansible_python_interpreter: /usr/bin/python3
+    ansible_user: odroid
+    ansible_password: odroid
+
+    ssh_user: odroid
+    ssh_initial_password: odroid
+
+  children:
+    controllers:
+      hosts:
+        192.168.1.200: # ctrl0
+          machine_type: "odroid-m1"
+          network:
+            hostname: ctrl0
+            static_ip: "192.168.1.200"
+          role: controller+worker
+
+    workers:
+      hosts:
+        192.168.1.201: # worker0 (ODROID M1)
+          machine_type: "odroid-m1"
+          network:
+            hostname: worker0
+            static_ip: "192.168.1.201"
+          role: worker
+
+        192.168.1.202: # worker1 (ODROID M1)
+          machine_type: "odroid-m1"
+          network:
+            hostname: worker1
+            static_ip: "192.168.1.202"
+          role: worker

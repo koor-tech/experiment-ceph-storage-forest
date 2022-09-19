@@ -1,0 +1,286 @@
+#
+# Playbook for setting up kubernetes
+#
+---
+- name: k8s-setup all-in-one server setup (k0s)
+  hosts: "{{ ansible_limit | default(omit) }}"
+  remote_user: root
+  vars:
+    k8s_node_name: "{{ lookup('env', 'NODE_NAME') }}"
+    k8s_node_labels: "{{ lookup('env', 'NODE_LABELS') }}"
+    k0s_role: "{{ lookup('env', 'K0S_ROLE') }}"
+    k0s_cluster_yaml: "{{ lookup('env', 'K0S_CLUSTER_YAML') }}"
+    k0s_join_node: "{{ lookup('env', 'K0S_JOIN_NODE') }}"
+
+    crictl_version: v1.22.0
+    crictl_download_url: "https://github.com/kubernetes-sigs/cri-tools/releases/download/{{ crictl_version }}/crictl-{{ crictl_version }}-linux-amd64.tar.gz"
+    crictl_checksum: sha256:45e0556c42616af60ebe93bf4691056338b3ea0001c0201a6a8ff8b1dbc0652a
+
+    # k0s_version: v1.21.1+k0s.0 # k0s version
+    # k0s_checksum: sha256:ea705af105ab6d89bb76c0055b074a76049bb06db6556c92061d433cdfebcbc4
+    k0s_version: v1.21.11+k0s.0 # k0s version
+    k0s_checksum: sha256:7a335c2cddef1c643933ab9ef6c0939d0ab2170a40aacbe15c3fa77b433b1aa6
+    k0s_download_url: "https://github.com/k0sproject/k0s/releases/download/{{ k0s_version }}/k0s-{{ k0s_version }}-amd64"
+    k0s_local_copy_path: ../../files/k0s/{{ k0s_version }}/k0s
+
+    kubectl_version: v1.21.1 # cluster version
+    kubectl_download_url: "https://dl.k8s.io/release/{{ kubectl_version }}/bin/linux/amd64/kubectl"
+    kubectl_checksum: sha256:58785190e2b4fc6891e01108e41f9ba5db26e04cebb7c1ac639919a931ce9233
+    kubectl_local_copy_path: ../../files/kubectl/{{ kubectl_version }}/kubectl
+
+  tasks:
+    - name: Populate service facts
+      ansible.builtin.service_facts:
+
+    - name: Ensure k0s_role is specified
+      when: k0s_role is not defined or k0s_role == ''
+      no_log: true
+      ansible.builtin.fail:
+        msg: "k0s_role (ENV: K0S_ROLE) must be specified"
+
+    - name: Ensure node is classified properly as worker, controller or both
+      when: k0s_role != "controller" and k0s_role != "worker" and k0s_role != "controller+worker"
+      ansible.builtin.fail:
+        msg: "The node must be either a worker, controller or both"
+
+    #################
+    # Tooling setup #
+    #################
+
+    - name: Download crictl ({{ crictl_version }})
+      tags: [ "k8s:tools:crictl:install" ]
+      ansible.builtin.get_url:
+        url: "{{ crictl_download_url }}"
+        checksum: "{{ crictl_checksum }}"
+        mode: 0755
+        dest: "/tmp/crictl-{{ crictl_version }}-linux-amd64.tar.gz"
+
+    - name: Unzip crictl
+      tags: [ "k8s:tools:crictl:install" ]
+      ansible.builtin.unarchive:
+        remote_src: yes
+        src: "/tmp/crictl-{{ crictl_version }}-linux-amd64.tar.gz"
+        dest: "/usr/local/bin"
+
+    - name: Install crictl config for use with k0s
+      tags: [ "k8s:tools:crictl:install" ]
+      ansible.builtin.template:
+        src: ../../templates/crictl-k0s.yaml.j2
+        dest: /etc/crictl.yaml
+        owner: root
+        group: root
+        mode: 0644
+
+    ################
+    # k0s Download #
+    ################
+
+    # - name: Download k0s
+    #   when: ansible_facts.services["k0scontroller.service"] is not defined
+    #   ansible.builtin.get_url:
+    #     url: "{{ k0s_download_url }}"
+    #     checksum: "{{ k0s_checksum }}"
+    #     mode: 0755
+    #     dest: /usr/bin/k0s
+
+    - name: Copy over k0s binary (avoid rate limit)
+      when: ansible_facts.services["k0scontroller.service"] is not defined
+      ansible.builtin.copy:
+        src: "{{ k0s_local_copy_path }}"
+        mode: 0755
+        dest: /usr/bin/k0s
+
+    - name: Create /var/lib/k0s folder
+      when: ansible_facts.services["k0scontroller.service"] is not defined
+      ansible.builtin.file:
+        path: /var/lib/k0s
+        state: directory
+
+    - name: Add k0s config file
+      when: ansible_facts.services["k0scontroller.service"] is not defined
+      ansible.builtin.template:
+        src: ../../templates/k0s-config.yaml.j2
+        dest: /var/lib/k0s/config.yaml
+        owner: root
+        group: root
+        mode: 0644
+
+    #################
+    # Cluster Setup #
+    #################
+
+    - name: Prep for worker nodes
+      tags: [ "worker-node-setup" ]
+      when: '"worker" in k0s_role and k0s_join_node'
+      block:
+        - name: Generate temporary join token (on {{ k0s_join_node }})
+          delegate_to: "{{ k0s_join_node }}"
+          set_fact:
+            worker_token_file_name: /tmp/worker-role-use-by-{{ worker_token_expiration_time }}.token
+          vars:
+            worker_token_expiration_time: "{{ '%Y-%m-%d-%H:%m' | strftime( ( ansible_date_time.epoch | int ) + ( 60 * 60 * 168 )  ) }}"
+
+        - name: Create worker join token (saved @ {{ worker_token_file_name }})
+          delegate_to: "{{ k0s_join_node }}"
+          shell: |
+            k0s token create --role={{ k0s_role }} --expiry=168h > {{ worker_token_file_name }}
+
+        - name: Copy out worker token
+          delegate_to: "{{ k0s_join_node }}"
+          ansible.builtin.fetch:
+            src: "{{ worker_token_file_name }}"
+            dest: output
+
+        - name: Copy cluster join token token for ({{ inventory_hostname }})
+          ansible.builtin.copy:
+            src: output/{{ inventory_hostname }}/{{ worker_token_file_name}}
+            dest: /var/lib/k0s/worker.token
+
+    - name: Install k0s
+      when: ansible_facts.services["k0scontroller.service"] is not defined
+      block:
+        - name: Install k0s (controller)
+          when: k0s_role == "controller"
+          ansible.builtin.command: |
+            k0s install controller -c /var/lib/k0s/config.yaml
+
+        - name: Install k0s (worker)
+          when: |
+            k0s_role == "worker"
+            and (ansible_facts.services["k0sworker.service"] is not defined
+                 or ansible_facts.services["k0sworker.service"].state != "running")
+          # NOTE: kubelet extra args --v=0 is required due to bug in log printing for cadvisor
+          # https://github.com/google/cadvisor/issues/3025
+          ansible.builtin.command: |
+            k0s install worker \
+            -c /var/lib/k0s/config.yaml \
+            --token-file /var/lib/k0s/worker.token \
+            --labels='{{ k8s_node_labels }}' \
+            --kubelet-extra-args="--v=0"
+
+        - name: Install k0s (first controller+worker)
+          when: |
+            k0s_role == "controller+worker" and k0s_join_node == ""
+            and ( ansible_facts.services["k0scontroller.service"] is not defined
+                  or ansible_facts.services["k0scontroller.service"].state != "running")
+          ansible.builtin.command: |
+            k0s install controller -c /var/lib/k0s/config.yaml --single
+
+        - name: Install k0s (controller+worker)
+          when: |
+            k0s_role == "controller+worker" and k0s_join_node != ""
+            and ( ansible_facts.services["k0scontroller.service"] is not defined
+                  or ansible_facts.services["k0scontroller.service"].state != "running")
+          ansible.builtin.command: |
+            k0s install controller -c /var/lib/k0s/config.yaml --token-file /var/lib/k0s/worker.token --single
+
+        - name: Check if the admin configuration already exists
+          stat: path=/var/lib/k0s/pki/admin.conf
+          register: admin_conf_exists
+
+        - name: Start k0s
+          when: not admin_conf_exists.stat.exists and "controller" in k0s_role
+          ansible.builtin.command: |
+            k0s start
+
+        - name: Copy out cluster configuration (first controller+worker)
+          when: k0s_role == "controller+worker" and k0s_join_node == ""
+          ansible.builtin.fetch:
+            src: /var/lib/k0s/pki/admin.conf
+            dest: output
+
+        - name: Replace localhost in cluster configuration
+          when: |
+            "controller" in k0s_role and k0s_join_node == ""
+          delegate_to: localhost
+          ansible.builtin.replace:
+            path: "output/{{ inventory_hostname }}/var/lib/k0s/pki/admin.conf"
+            regexp: 'https://localhost:6443'
+            replace: "https://{{ cluster_external_address | default(inventory_hostname) }}:6443"
+
+    - name: Start the k0s controller service
+      when: |
+        "controller" in k0s_role
+        and (ansible_facts.services["k0scontroller.service"] is not defined
+             or ansible_facts.services["k0scontroller.service"].state != "running")
+      ansible.builtin.systemd:
+        name: k0scontroller
+        state: started
+        enabled: yes
+
+    - name: Start the k0s worker service
+      when: |
+        k0s_role == "worker"
+        and (ansible_facts.services["k0sworker.service"] is not defined
+             or ansible_facts.services["k0sworker.service"].state != "running")
+      ansible.builtin.systemd:
+        name: k0sworker
+        state: started
+        enabled: yes
+
+    ############################
+    # Cluster setup completion #
+    ############################
+
+    # - name: Download and install kubectl
+    #   ansible.builtin.get_url:
+    #     url: "{{ kubectl_download_url }}"
+    #     checksum: "{{ kubectl_checksum }}"
+    #     mode: 0755
+    #     dest: /usr/local/bin/kubectl
+
+    - name: Copy over kubectl binary to new machine (avoid rate limit)
+      ansible.builtin.copy:
+        src: "{{ kubectl_local_copy_path }}"
+        force: no
+        mode: 0755
+        dest: /usr/local/bin/kubectl
+
+    - name: Copy over kubectl binary to k0s join node (avoid rate limit)
+      tags: [ "k8s:finishing" ]
+      delegate_to: "{{ k0s_join_node }}"
+      ansible.builtin.copy:
+        force: no
+        src: "{{ kubectl_local_copy_path }}"
+        mode: 0755
+        dest: /usr/local/bin/kubectl
+
+
+    - name: Validate k8s admin kubectl connection connection (only on controllers)
+      when: '"controller" in k0s_role'
+      command: |
+        kubectl --kubeconfig=/var/lib/k0s/pki/admin.conf get node {{ k8s_node_name }}
+      retries: 6
+      delay: 30
+      register: node_listing
+      until: node_listing.rc == 0
+
+    #################
+    # Node labeling #
+    #################
+
+    - name: Label master node with node labels
+      when: '"controller" in k0s_role'
+      command: |
+        kubectl \
+          label \
+          node \
+          --kubeconfig=/var/lib/k0s/pki/admin.conf \
+          --overwrite \
+          {{ k8s_node_name }} \
+          {{ k8s_node_labels | replace(",", " ") }}
+
+    - name: Label worker node with node labels
+      tags: [ "worker-node-setup", "k8s:finishing" ]
+      when: '"worker" in k0s_role and k0s_join_node'
+      block:
+        - name: Tag the worker node with labels
+          delegate_to: "{{ k0s_join_node }}"
+          shell: |
+            kubectl \
+              label \
+              node \
+              --kubeconfig=/var/lib/k0s/pki/admin.conf \
+              --overwrite \
+              {{ k8s_node_name }} \
+              {{ k8s_node_labels | replace(",", " ") }}

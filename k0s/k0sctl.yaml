@@ -1,0 +1,39 @@
+---
+apiVersion: k0sctl.k0sproject.io/v1beta1
+kind: Cluster
+metadata:
+  name: storage-forest
+spec:
+
+  hosts:
+    - role: controller+worker
+      noTaints: true
+      ssh:
+        address: 192.168.1.200
+        user: odroid
+        keyPath: ~/.ssh/id_rsa
+
+    - role: worker
+      ssh:
+        address: 192.168.1.201
+        user: odroid
+        keyPath: ~/.ssh/id_rsa
+
+    - role: worker
+      installFlags:
+        # # ODROID HC4 is missing/not creating cpu.cfs_period_us file...
+        # - --kubelet-extra-args="--cpu-cfs-quota=false"
+      ssh:
+        address: 192.168.1.202
+        user: odroid
+        keyPath: ~/.ssh/id_rsa
+
+  k0s:
+    version: 1.24.4+k0s.0
+    # config:
+    #   spec:
+    #     network:
+    #       provider: kuberouter
+    #       podCIDR: 10.244.0.0/16
+    #       serviceCIDR: 10.96.0.0/16
+    #       calico: null

@@ -1,0 +1,15 @@
+---
+apiVersion: ceph.rook.io/v1
+kind: CephBlockPool
+metadata:
+  name: hybrid-ssd-hdd
+  namespace: rook-ceph
+spec:
+  # NOTE: with enough hosts, use a failureDomain of host for greater durability
+  failureDomain: osd
+  # NOTE: since there are only 2 of each kind of drive, we can only replicate 2 assuming 1 OSD per drive 
+  replicated:
+    size: 2
+    hybridStorage:
+      primaryDeviceClass: ssd
+      secondaryDeviceClass: hdd

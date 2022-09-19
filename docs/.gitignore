@@ -1,0 +1,8 @@
+# Emacs / vim
+*~
+\#*
+*\#
+
+ansible/*.retry
+
+.envrc

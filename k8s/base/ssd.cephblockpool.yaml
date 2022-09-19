@@ -1,0 +1,13 @@
+---
+apiVersion: ceph.rook.io/v1
+kind: CephBlockPool
+metadata:
+  name: ssd
+  namespace: rook-ceph
+spec:
+  deviceClass: ssd
+  # NOTE: with enough hosts, use a failureDomain of host for greater durability
+  failureDomain: osd
+  # NOTE: since there are only 2 of each kind of drive, we can only replicate 2 assuming 1 OSD per drive 
+  replicated:
+    size: 2

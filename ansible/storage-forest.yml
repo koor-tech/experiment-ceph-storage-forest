@@ -1,0 +1,31 @@
+---
+- name: base node setup
+  hosts: all
+  remote_user: odroid
+  vars:
+    ansible_become_pass: "{{ lookup('ansible.builtin.env', 'NODE_SSH_PASSWORD') }}"
+    username: odroid
+
+    network_hostname: "{{ hostvars[inventory_hostname]['network']['hostname'] }}"
+    machine_type: "{{ hostvars[inventory_hostname]['machine_type'] }}"
+    ssh_access_pub_key_path: "{{ lookup('ansible.builtin.env', 'SSH_ACCESS_PUB_KEY_PATH') }}"
+
+    containerd_download_url: "https://github.com/containerd/containerd/releases/download/v1.6.8/containerd-1.6.8-linux-arm64.tar.gz"
+    containerd_download_checksum: "sha256:b114e36ecce78cef9d611416c01b784a420928c82766d6df7dc02b10d9da94cd"
+
+    runc_download_url: "https://github.com/opencontainers/runc/releases/download/v1.1.4/runc.arm64"
+    runc_download_checksum: "sha256:dbb71e737eaef454a406ce21fd021bd8f1b35afb7635016745992bbd7c17a223"
+
+    cni_plugins_download_url: "https://github.com/containernetworking/plugins/releases/download/v1.1.1/cni-plugins-linux-arm-v1.1.1.tgz"
+    cni_plugins_download_checksum: "sha256:84f97baf80f9670a8cd0308dedcc8405d2bbc65166d670b48795e0d1262b4248"
+  roles:
+    - role: common-ubuntu
+      tags:
+        - common
+        
+    # Kernel rebuilds are sometimes necessary
+    - role: odroid-hc4-rebuilt-kernel
+      when: machine_type == "odroid-hc4"
+      tags:
+        - common
+        - hc4

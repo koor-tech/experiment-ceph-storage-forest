@@ -1,0 +1,204 @@
+#####################
+# Passwordless Sudo #
+#####################
+
+- name: check for admin group (if installed, passwordless sudo is present)
+  raw: "groups"
+  register: groups_check
+
+- name: debug
+  ansible.builtin.debug:
+    var: groups_check
+
+- name: setup passwordless sudo
+  when: '"admin" not in groups_check["stdout"]'
+  block:
+    - name: create admin group
+      ansible.builtin.raw: |
+        echo {{ ssh_initial_password }} | sudo -Ss &&
+        sudo groupadd admin --system || true
+
+    - name: add user to admin group
+      ansible.builtin.raw: |
+        echo {{ ssh_initial_password }} | sudo -Ss &&
+        sudo usermod -a -G admin {{ ssh_user }}
+
+    - name: copy sudoers file, make temporary editable
+      ansible.builtin.raw: |
+        echo {{ ssh_initial_password }} | sudo -Ss &&
+        sudo cp /etc/sudoers /etc/sudoers.bak &&
+        sudo cp /etc/sudoers /etc/sudoers.tmp &&
+        sudo chmod 777 /etc/sudoers.tmp
+
+    - name: add admins no passwd rule for sudoers file
+      ansible.builtin.raw: |
+        echo {{ ssh_initial_password }} | sudo -Ss &&
+        sudo echo -e "\n%admin ALL=(ALL:ALL) NOPASSWD:ALL" >> /etc/sudoers.tmp &&
+        sudo chmod 440 /etc/sudoers.tmp
+
+    - name: check and install new sudoers
+      ansible.builtin.raw: |
+        echo {{ ssh_initial_password }} | sudo -Ss &&
+        sudo visudo -q -c -f /etc/sudoers.tmp &&
+        sudo cp -f /etc/sudoers.tmp /etc/sudoers
+
+    - name: reset ssh connection to allow user changes
+      meta: reset_connection
+
+###################
+# Ansible install #
+###################
+
+- name: check for installed ansible (apt)
+  ansible.builtin.raw: "dpkg -s ansible"
+  register: ansible_check
+  ignore_errors: yes
+  no_log: true
+
+- name: install ansible via apt
+  when: ansible_check["rc"] != 0
+  block:
+    # Update (with universe loaded)
+    - name: apt-get update
+      ansible.builtin.raw: "sudo apt-get update"
+
+    # Install any version of software-properties-common that is available
+    - name: install software-properties-common
+      ansible.builtin.raw: "sudo apt-get install -y software-properties-common"
+
+    # Enable the universe repository
+    - name: enable universe repository
+      ansible.builtin.raw: "sudo add-apt-repository universe"
+
+    # Update (with universe loaded)
+    - name: apt-get update
+      ansible.builtin.raw: "sudo apt-get update"
+
+    # Install most up-to-date version of software-properties-common on universe
+    - name: apt-get install software-properties-common
+      ansible.builtin.raw: "sudo apt-get install -y software-properties-common"
+
+    - name: add apt repo for ansible
+      ansible.builtin.raw: "sudo apt-add-repository -y ppa:ansible/ansible"
+
+    - name: apt-get update and install ansible (this may take a while)
+      ansible.builtin.raw: "sudo apt-get update && sudo apt-get install -y ansible"
+
+###################
+# Basic Box setup #
+###################
+
+- name: set hostname to ({{ network_hostname }})
+  ansible.builtin.shell: |
+    sudo hostnamectl set-hostname {{ network_hostname }}
+
+- name: add hostname to /etc/hosts
+  become: yes
+  ansible.builtin.lineinfile:
+    path: /etc/hosts
+    state: present
+    line: |
+      127.0.1.1       {{ network_hostname }}
+
+- name: set up authorized SSH key (@ {{ ssh_access_pub_key_path }})
+  ansible.posix.authorized_key:
+    user: odroid
+    state: present
+    key: "{{ item }}"
+  with_file:
+    - "{{ ssh_access_pub_key_path }}"
+
+- name: enable pubkey auth for sshd
+  become: yes
+  ansible.builtin.lineinfile:
+    path: /etc/ssh/sshd_config
+    state: present
+    line: |
+      PubkeyAuthentication yes
+
+- name: perform kernel upgrade
+  become: yes
+  ansible.builtin.apt:
+    upgrade: 'dist'
+
+- name: install creature comforts
+  become: yes
+  ansible.builtin.apt:
+    pkg:
+      - vim
+      - htop
+
+####################
+# Kubernetes Setup #
+####################
+
+- name: install requirements (via apt)
+  tags: [ "setup:k8s" ]
+  become: true
+  ansible.builtin.apt:
+    pkg:
+      - apparmor # needed by kube-router
+      - ceph-common
+      - linux-image-4.19.219-odroid-arm64 # needed for rbd kernel module and libceph
+      - linux-doc-4.19
+      - firmware-linux-free
+      - irqbalance
+
+- name: download containerd
+  tags: [ "setup:k8s", "install:containerd" ]
+  ansible.builtin.get_url:
+    url: "{{ containerd_download_url }}"
+    checksum: "{{ containerd_download_checksum }}"
+    dest: "/tmp/{{ containerd_download_url | basename }}"
+
+- name: unpack containerd
+  tags: [ "setup:k8s", "install:containerd" ]
+  become: true
+  ansible.builtin.shell: |
+    tar Cxzvf /usr/local /tmp/{{ containerd_download_url | basename }}
+
+- name: download runc
+  tags: [ "setup:k8s", "install:runc" ]
+  ansible.builtin.get_url:
+    url: "{{ runc_download_url }}"
+    checksum: "{{ runc_download_checksum }}"
+    dest: "/tmp/{{ runc_download_url | basename }}"
+
+- name: unpack runc
+  tags: [ "setup:k8s", "install:runc" ]
+  become: true
+  ansible.builtin.shell: |
+    install -m 755 /tmp/{{ runc_download_url | basename }} /usr/local/sbin/runc
+
+- name: download cni-plugins binaries
+  tags: [ "setup:k8s", "install:cni-plugins" ]
+  ansible.builtin.get_url:
+    url: "{{ cni_plugins_download_url }}"
+    checksum: "{{ cni_plugins_download_checksum }}"
+    dest: "/tmp/{{ cni_plugins_download_url | basename }}"
+
+- name: unpack cni-plugins
+  tags: [ "setup:k8s", "install:cni-plugins" ]
+  become: true
+  ansible.builtin.file:
+    path: /opt/cni/bin
+    state: directory
+
+- name: unpack cni-plugins
+  tags: [ "setup:k8s", "install:cni-plugins" ]
+  become: true
+  ansible.builtin.shell: |
+    tar Cxzvf /opt/cni/bin /tmp/{{ cni_plugins_download_url | basename }}
+
+- name: perform final kernel upgrade
+  become: yes
+  ansible.builtin.apt:
+    upgrade: 'dist'
+
+##########
+# Reboot #
+##########
+
+- name: reboot the machine
+  become: yes
+  ansible.builtin.reboot:
