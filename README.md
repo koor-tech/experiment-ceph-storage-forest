@@ -91,10 +91,10 @@ make
 
 After the cluster has been set up, cluster configurations will be available locally to use to run workloads.
 
-There are a few `make` targets that will run example workloads for you:
+See the following files for example workloads with `fio` (Flexible I/O tester):
 
-- `make example-workload-minio`
-- `make example-workload-harbor`
+- [`k8s/base/fio-hdd.pvc.yaml`](./k8s/base/fio-hdd.pvc.yaml)
+- [`k8s/base/fio.job.yaml`](./k8s/base/fio.job.yaml)
 
 ## Special features
 
