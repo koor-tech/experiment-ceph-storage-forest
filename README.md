@@ -100,6 +100,7 @@ There are a few `make` targets that will run example workloads for you:
 
 Along with simply creating a storage network spanning different kinds of devices, the Stoarge Forest
 
+[repo]: https://gitlab.com/opencore-ventures/experiment-ceph-storage-forest
 [rook]: https://docs.rook.io
 [ceph]: https://docs.ceph.com
 [odroid]: https://www.hardkernel.com/
@@ -110,7 +111,6 @@ Along with simply creating a storage network spanning different kinds of devices
 [ceph-obj-gateway]: https://docs.ceph.com/en/latest/radosgw/
 [cephfs]: https://docs.ceph.com/en/latest/cephfs/
 [ceph-rbd]: https://docs.ceph.com/en/latest/rbd
-[repo]: https://gitlab.com/opencore-ventures/experiment-ceph-storage-forest
 [ansible]: https://docs.ansible.com
 [k8s]: https://kubernetes.io/docs
 [k0s]: https://docs.k0sproject.io/
