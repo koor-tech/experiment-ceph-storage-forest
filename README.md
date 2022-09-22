@@ -16,7 +16,7 @@ Rook and Ceph combine to provide:
 - Flexible storage provisioning and orchestration with Rook
 - [RBD mirroring][ceph-rbd-mirroring] for moving data between storage classes
 - [Image Live Migration][ceph-live-migration]
-- [Object Storage][ceph-object-gateway] (S3 & Swift compatibility)
+- [Object Storage][ceph-obj-gateway] (S3 & Swift compatibility)
 - [Shared Filesystem][cephfs] (similar to NFS)
 - [network block device][ceph-rbd] (a la `nbd`/ISCSI)
 
@@ -58,29 +58,6 @@ The forest is managed with:
 
 While other systems may have done the job, this stack is wonderfully robust and current.
 
-## Operation
-
-Once the forest is set up, of course one of the interesting things to see is what we get out of the systems once connected.
-
-### Ceph Dashboard
-
-Here's what the Ceph Dashboard shows:
-
-< TODO: IMAGE >
-
-### Writing Speeds on different classes
-
-Some basic tests with [`fio`][fio] produce the following writing speeds on different categorizations of hardware:
-
-| Class  | Rand R | Rand W | Rand R/W | Seq. R | Seq. W | Seq. R/W | Mixed R/W |
-|--------|--------|--------|----------|--------|--------|----------|-----------|
-| `nvme` |        |        |          |        |        |          |           |
-| `ssd`  |        |        |          |        |        |          |           |
-| `hdd`  |        |        |          |        |        |          |           |
-| `tape` |        |        |          |        |        |          |           |
-
-[fio]: https://fio.readthedocs.io
-
 ## Getting started
 
 You can replicate this setup yourself with the exact same or comparable hardware.
@@ -89,7 +66,11 @@ You can replicate this setup yourself with the exact same or comparable hardware
 
 Update [`ansible/inventory.yml`](./ansible/inventory.yml) with the correct IPs for machines you want to configure
 
-### 2. Set up the cluster
+### 2. Prepare the hardware
+
+See `docs/compute-setup.md` for full instructions on how to set up [HardKernel ODROID][odroid] hardware.
+
+### 3. Set up the cluster
 
 You can kick off the automation that will provision and terraform the machines by running `make`:
 
@@ -119,6 +100,7 @@ Along with simply creating a storage network spanning different kinds of devices
 
 [rook]: https://docs.rook.io
 [ceph]: https://docs.ceph.com
+[odroid]: https://www.hardkernel.com/
 [odroid-m1]: https://www.hardkernel.com/shop/odroid-m1-with-8gbyte-ram/
 [odroid-hc4]: https://www.hardkernel.com/shop/odroid-hc4/
 [ceph-rbd-mirroring]: https://docs.ceph.com/en/latest/rbd/rbd-mirroring/
