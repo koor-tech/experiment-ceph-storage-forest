@@ -1,5 +1,7 @@
 # Rook/Ceph Storage Forest
 
+![Storage Forest Logo](./ceph-storage-forest-logo.png)
+
 This repository contains the infrastructure code needed to run a proof of concept "Storage Forest" with [Rook][rook]/[Ceph][ceph].
 
 A "Storage Forest" is a storage network spanning many different devices and strategies for storing data, mimicking the diversity of a physical forest.
