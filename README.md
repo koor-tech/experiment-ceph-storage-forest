@@ -33,10 +33,11 @@ This particular Storage Forest has the components listed below.
 
 ### Compute
 
-- 2x [ODROID M1][odroid-m1]
-- 1x [ODROID HC4][odroid-hc4]
+- 3x [ODROID M1][odroid-m1]
 
 For more complete directions on how to prep the compute nodes, see [`docs/compute-setup.md`](./docs/setup-compute.md).
+
+Optionally, you can also use the [ODROID HC4][odroid-hc4] for HDD storage as well, though [kernel rebuilding and some other hacks are required](./docs/setup-compute-odroid-hc4.md).
 
 [odroid-m1]: https://www.hardkernel.com/shop/odroid-m1-with-8gbyte-ram/
 [odroid-hc4]: https://www.hardkernel.com/shop/odroid-hc4/
